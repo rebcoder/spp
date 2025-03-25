@@ -1,6 +1,8 @@
 let stompClient = null;
 let userId = null;
 let userName = null;
+let currentRoomId = null;
+let joinedUsers = new Set();
 
 function generateUserId() {
   return Math.random().toString(36).substr(2, 6);
@@ -28,11 +30,45 @@ function enableRoomCreationOptions() {
 }
 
 function promptForUserName() {
-  userName = prompt('Please enter your name:');
-  if (!userName) {
-    userName = 'Anonymous';
+  // Check if we already have a username in session storage
+  const storedName = sessionStorage.getItem('scrumPokerUsername');
+  if (storedName) {
+    return storedName;
   }
-  document.getElementById('user-name').textContent = userName;
+
+  let name = '';
+  while (true) {
+    name = prompt('Please enter your name (required):');
+
+    if (name === null) {
+      // User clicked cancel
+      return null;
+    }
+
+    name = name.trim();
+
+    if (name === '') {
+      alert('Username cannot be empty');
+      continue;
+    }
+
+    if (name.length > 20) {
+      alert('Username must be less than 20 characters');
+      continue;
+    }
+
+    break;
+  }
+
+  return name;
+}
+// New User Tracking
+function isNewUser(userId) {
+  if (!joinedUsers.has(userId)) {
+    joinedUsers.add(userId);
+    return true;
+  }
+  return false;
 }
 
 document.getElementById('create-room-btn').addEventListener('click', function () {
@@ -99,15 +135,22 @@ document.getElementById('go-home-btn').addEventListener('click', function () {
 });
 
 function connectWebSocket(roomId) {
+  currentRoomId = roomId;
+  joinedUsers = new Set(); // Reset for new room
   const socket = new SockJS('/ws');
   stompClient = Stomp.over(socket);
   stompClient.connect({}, function (frame) {
     console.log('Connected: ' + frame);
-    stompClient.send(`/app/join/${roomId}`, {}, JSON.stringify({ userId, userName }));
+
+    // Send join message with user info
+    stompClient.send(`/app/join/${roomId}`, {},
+      JSON.stringify({ userId, userName }));
+
+    // Subscribe to room updates
     stompClient.subscribe(`/topic/votes/${roomId}`, function (message) {
       const state = JSON.parse(message.body);
-      updateUsersList(state.names); // Always update users list
-      updateVotesList(state.votes, state.names, state.revealed); // Update votes list based on revealed state
+      updateUsersList(state.names);  // Update users list
+      updateVotesList(state.votes, state.names, state.revealed);
     });
   });
 }
@@ -121,53 +164,108 @@ function sendVote(roomId, voteValue) {
   console.log("Sending vote payload:", payload); // Debugging
   stompClient.send(`/app/vote/${roomId}`, {}, JSON.stringify(payload));
 }
+function showNotification(message) {
+  const notification = document.createElement('div');
+  notification.className = 'notification';
+  notification.textContent = message;
+  document.body.appendChild(notification);
 
+  setTimeout(() => {
+    notification.remove();
+  }, 3000);
+}
 function updateUsersList(names) {
   const usersList = document.getElementById('users-list');
-  usersList.innerHTML = ''; // Clear the list before updating
+  const userCount = document.getElementById('user-count');
 
-  for (const [userId, name] of Object.entries(names)) {
-    const userItem = document.createElement('li');
-    userItem.textContent = name; // Display user name
-    usersList.appendChild(userItem);
+  // Clear existing items but keep in DOM for smoother transitions
+  while (usersList.firstChild) {
+    usersList.removeChild(usersList.firstChild);
   }
 
-  document.getElementById('users-section').style.display = 'block'; // Show the users section
+  userCount.textContent = Object.keys(names).length;
+
+  // Create document fragment for better performance
+  const fragment = document.createDocumentFragment();
+
+  Object.entries(names).forEach(([userId, name]) => {
+    const userItem = document.createElement('li');
+    userItem.className = 'user-item';
+
+    if (userId === window.userId) {
+      userItem.classList.add('current-user');
+    }
+
+    if (isNewUser(userId)) {
+      userItem.classList.add('new-user');
+    }
+
+    userItem.innerHTML = `
+      <span class="user-avatar">${name.charAt(0).toUpperCase()}</span>
+      <span class="user-name">${name}</span>
+    `;
+
+    fragment.appendChild(userItem);
+  });
+
+  usersList.appendChild(fragment);
+  document.getElementById('users-section').style.display = 'block';
 }
 
 function updateVotesList(votes, names, revealed) {
   const votesList = document.getElementById('votes-list');
-  votesList.innerHTML = ''; // Clear the list before updating
+  votesList.innerHTML = '';
+
+  // Add revealed class to parent container
+  const votesContainer = document.getElementById('votes-section');
+  votesContainer.classList.toggle('votes-revealed', revealed);
 
   for (const [userId, vote] of Object.entries(votes)) {
-    const userName = names[userId] || "Anonymous"; // Fallback to "Anonymous" if name is missing
+    const userName = names[userId] || "Anonymous";
     const voteItem = document.createElement('li');
 
-    if (revealed) {
-      voteItem.textContent = `${userName}: Voted ${vote}`; // Show vote if revealed
-    } else {
-      voteItem.textContent = `${userName}: Voted`; // Hide vote until revealed
-    }
+    voteItem.innerHTML = `
+      <span class="voter-name">${userName}</span>
+      <div>
+        <span>Voted</span>
+        <span class="voted-number">${revealed ? vote : '?'}</span>
+      </div>
+    `;
 
     votesList.appendChild(voteItem);
   }
 
-  document.getElementById('votes-section').style.display = 'block'; // Show the votes section
+  votesContainer.style.display = 'block';
 }
 
-window.onload = function () {
+window.onload = function() {
   if (isRoomUrl()) {
     const roomId = getRoomIdFromUrl();
     userId = generateUserId();
-    promptForUserName();
+
+    // Always prompt for username, regardless of URL parameters
+    userName = promptForUserName();
+
+    if (!userName) {
+      // If user cancels prompt, redirect to home
+      window.location.href = `${window.location.origin}/index.html`;
+      return;
+    }
+
+    // Store username in sessionStorage to persist through refreshes
+    sessionStorage.setItem('scrumPokerUsername', userName);
+
     document.getElementById('room-code').textContent = roomId;
+    document.getElementById('user-name').textContent = userName;
     document.getElementById('room-info').style.display = 'block';
     document.getElementById('voting-section').style.display = 'block';
     disableRoomCreationOptions();
     document.getElementById('go-home-btn').style.display = 'inline-block';
+
     connectWebSocket(roomId);
   } else {
+    // Clear any stored username when on home page
+    sessionStorage.removeItem('scrumPokerUsername');
     enableRoomCreationOptions();
   }
-
 };

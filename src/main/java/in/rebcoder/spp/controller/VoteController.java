@@ -32,6 +32,7 @@ public class VoteController {
         return getRoomState(roomId);
     }
 
+
     @MessageMapping("/reveal/{roomId}")
     @SendTo("/topic/votes/{roomId}")
     public Map<String, Object> revealVotes(@DestinationVariable String roomId) {
@@ -52,5 +53,20 @@ public class VoteController {
         state.put("names", roomService.getUserNames(roomId));
         state.put("revealed", roomService.isRevealed(roomId));
         return state;
+    }
+
+    @MessageMapping("/join/{roomId}")
+    @SendTo("/topic/votes/{roomId}")
+    public Map<String, Object> joinRoom(
+            @Payload Map<String, String> payload,
+            @DestinationVariable String roomId) {
+        String userId = payload.get("userId");
+        String userName = payload.get("userName");
+
+        // Add user to the room
+        roomService.addUserName(roomId, userId, userName);
+
+        // Return updated room state
+        return getRoomState(roomId);
     }
 }
