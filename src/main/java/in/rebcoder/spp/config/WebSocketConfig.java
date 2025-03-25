@@ -1,6 +1,5 @@
 package in.rebcoder.spp.config;
 
-import in.rebcoder.spp.controller.WebSocketController;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.*;
