@@ -2,76 +2,142 @@ package in.rebcoder.spp.service;
 
 import in.rebcoder.spp.model.Room;
 import in.rebcoder.spp.model.Vote;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class RoomService {
-    private Map<String, Room> rooms = new ConcurrentHashMap<>();
+    public static final String ROOM_KEY_PREFIX = "room:";
+    private final RedisTemplate<String, Room> redisTemplate;
+
+    @Autowired
+    public RoomService(RedisTemplate<String, Room> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
     public String createRoom() {
-        String roomId = UUID.randomUUID().toString().substring(0, 6);
-        rooms.put(roomId, new Room(roomId));
+        String roomId = generateRoomId();
+        Room room = new Room();
+        room.setRoomId(roomId);
+        redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
         return roomId;
     }
 
     public Room getRoom(String roomId) {
-        return rooms.get(roomId);
+        return redisTemplate.opsForValue().get(ROOM_KEY_PREFIX + roomId);
     }
 
     public void addOrUpdateVote(String roomId, String userId, String vote) {
-        Room room = rooms.get(roomId);
+        Room room = getRoom(roomId);
         if (room != null) {
             room.addOrUpdateVote(userId, vote);
-            room.updateLastActivityTime();
-        }
-    }
-
-    public void addUserName(String roomId, String userId, String name) {
-        Room room = rooms.get(roomId);
-        if (room != null) {
-            room.addUserName(userId, name);
-            room.updateLastActivityTime();
+            redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
         }
     }
 
     public Map<String, String> getVotes(String roomId) {
-        Room room = rooms.get(roomId);
-        return room != null ? room.getUserVotes() : Collections.emptyMap();
-    }
-
-    public Map<String, String> getUserNames(String roomId) {
-        Room room = rooms.get(roomId);
-        return room != null ? room.getUserNames() : Collections.emptyMap();
+        Room room = getRoom(roomId);
+        return room != null ? room.getVotesAsStrings() : Collections.emptyMap();
     }
 
     public void revealVotes(String roomId) {
-        Room room = rooms.get(roomId);
+        Room room = getRoom(roomId);
         if (room != null) {
             room.setRevealed(true);
-            room.updateLastActivityTime();
+            redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
+        }
+    }
+
+    public void clearVotes(String roomId) {
+        Room room = getRoom(roomId);
+        if (room != null) {
+            room.getUserVotes().clear();
+            room.setRevealed(false);
+            redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
+        }
+    }
+
+    public Map<String, String> getUserNames(String roomId) {
+        Room room = getRoom(roomId);
+        return room != null ? room.getUserNames() : Collections.emptyMap();
+    }
+
+    public void addUserName(String roomId, String userId, String name) {
+        Room room = getRoom(roomId);
+        if (room != null) {
+            room.addUserName(userId, name);
+            redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
         }
     }
 
     public boolean isRevealed(String roomId) {
-        Room room = rooms.get(roomId);
+        Room room = getRoom(roomId);
         return room != null && room.isRevealed();
     }
 
-    public void clearVotes(String roomId) {
-        Room room = rooms.get(roomId);
+    private String generateRoomId() {
+        return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+
+    public void saveRoom(Room room) {
+        redisTemplate.opsForValue().set(
+                ROOM_KEY_PREFIX + room.getRoomId(),
+                room,
+                24, // TTL in hours
+                TimeUnit.HOURS
+        );
+    }
+
+    public void removeUser(String roomId, String userId) {
+        Room room = getRoom(roomId);
         if (room != null) {
-            room.getUserVotes().clear();
-            room.setRevealed(false);
-            room.updateLastActivityTime();
+            room.getUserVotes().remove(userId);
+            room.getUserNames().remove(userId);
+            saveRoom(room);
         }
     }
-    public Map<String, Room> getRooms() {
-        return rooms;
+    // Add these methods to your RoomService.java
+
+    /**
+     * Finds all room keys using SCAN (safe for production use)
+     */
+    public Set<String> getAllRoomKeys() {
+        Set<String> keys = new HashSet<>();
+        ScanOptions options = ScanOptions.scanOptions()
+                .match(ROOM_KEY_PREFIX + "*")
+                .count(100) // batch size
+                .build();
+
+        try (Cursor<byte[]> cursor = redisTemplate.getConnectionFactory()
+                .getConnection()
+                .scan(options)) {
+
+            while (cursor.hasNext()) {
+                keys.add(new String(cursor.next()));
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Gets a room if it exists
+     */
+    public Room getRoomIfExists(String roomId) {
+        return (Room) redisTemplate.opsForValue().get(ROOM_KEY_PREFIX + roomId);
+    }
+
+    /**
+     * Deletes a room
+     */
+    public void deleteRoom(String roomId) {
+        redisTemplate.delete(ROOM_KEY_PREFIX + roomId);
     }
 }

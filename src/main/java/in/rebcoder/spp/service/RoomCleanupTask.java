@@ -7,15 +7,24 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RoomCleanupTask {
+
     @Autowired
     private RoomService roomService;
 
     @Scheduled(fixedRate = 60000) // Run every minute
     public void cleanupInactiveRooms() {
         long currentTime = System.currentTimeMillis();
-        roomService.getRooms().entrySet().removeIf(entry -> {
-            Room room = entry.getValue();
-            return (currentTime - room.getLastActivityTime()) > 3600000; // 1 hour in milliseconds
+        long inactivityThreshold = 3600000; // 1 hour in milliseconds
+
+        roomService.getAllRoomKeys().forEach(roomKey -> {
+            String roomId = roomKey.replace(roomService.ROOM_KEY_PREFIX, "");
+            Room room = roomService.getRoomIfExists(roomId);
+
+            if (room != null &&
+                    (currentTime - room.getLastActivityTime()) > inactivityThreshold) {
+                roomService.deleteRoom(roomId);
+                System.out.println("Cleaned up inactive room: " + roomId);
+            }
         });
     }
 }
