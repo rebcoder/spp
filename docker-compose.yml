@@ -1,0 +1,31 @@
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "61613:61613"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+      - rabbitmq
+    environment:
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+
+volumes:
+  redis_data:

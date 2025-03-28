@@ -1,60 +1,60 @@
 package in.rebcoder.spp.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
-
+@Getter
+@Setter
 public class Room {
     private String roomId;
-    private Map<String, String> userVotes = new ConcurrentHashMap<>(); // userId -> vote
-    private Map<String, String> userNames = new ConcurrentHashMap<>(); // userId -> name
-    private boolean revealed = false; // Track if votes are revealed
-    private long lastActivityTime = System.currentTimeMillis(); // Track last activity time
+    private ConcurrentMap<String, Vote> userVotes; // Changed from Map<String, String>
+    private ConcurrentMap<String, String> userNames;
+    private boolean revealed;
+    private long lastActivityTime;
 
-    public Room(String roomId) {
+    @JsonCreator
+    public Room(@JsonProperty("roomId") String roomId,
+                @JsonProperty("userVotes") ConcurrentMap<String, Vote> userVotes,
+                @JsonProperty("userNames") ConcurrentMap<String, String> userNames,
+                @JsonProperty("revealed") boolean revealed,
+                @JsonProperty("lastActivityTime") long lastActivityTime) {
         this.roomId = roomId;
+        this.userVotes = userVotes != null ? userVotes : new ConcurrentHashMap<>();
+        this.userNames = userNames != null ? userNames : new ConcurrentHashMap<>();
+        this.revealed = revealed;
+        this.lastActivityTime = lastActivityTime;
+    }
+
+    public Room() {
         this.userVotes = new ConcurrentHashMap<>();
-        this.userNames = new ConcurrentHashMap<>(); // Initialize the userNames map
+        this.userNames = new ConcurrentHashMap<>();
     }
 
-    public void updateLastActivityTime() {
-        this.lastActivityTime = System.currentTimeMillis();
+    // Update methods to handle Vote objects
+    public void addOrUpdateVote(String userId, String voteValue) {
+        this.userVotes.put(userId, new Vote(userId, voteValue));
+        updateLastActivityTime();
     }
-
-    public long getLastActivityTime() {
-        return lastActivityTime;
-    }
-
-    public void addOrUpdateVote(String userId, String vote) {
-        userVotes.put(userId, vote);
+    @JsonIgnore
+    public Map<String, String> getVotesAsStrings() {
+        Map<String, String> result = new ConcurrentHashMap<>();
+        userVotes.forEach((userId, vote) -> result.put(userId, vote.getValue()));
+        return result;
     }
 
     public void addUserName(String userId, String name) {
         userNames.put(userId, name);
+        updateLastActivityTime();
     }
 
-    public String getUserName(String userId) {
-        return userNames.get(userId);
-    }
-
-    public Map<String, String> getUserVotes() {
-        return userVotes;
-    }
-
-    public Map<String, String> getUserNames() {
-        return userNames;
-    }
-
-    public boolean isRevealed() {
-        return revealed;
-    }
-
-    public void setRevealed(boolean revealed) {
-        this.revealed = revealed;
+    public void updateLastActivityTime() {
+        this.lastActivityTime = System.currentTimeMillis();
     }
 }
