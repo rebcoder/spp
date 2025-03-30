@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -16,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 public class RoomService {
     public static final String ROOM_KEY_PREFIX = "room:";
     private final RedisTemplate<String, Room> redisTemplate;
+    @Autowired
+    private SimpMessagingTemplate messageTemplate;
 
     @Autowired
     public RoomService(RedisTemplate<String, Room> redisTemplate) {
@@ -69,12 +72,22 @@ public class RoomService {
         return room != null ? room.getUserNames() : Collections.emptyMap();
     }
 
-    public void addUserName(String roomId, String userId, String name) {
+    public boolean addUserName(String roomId, String userId, String name) {
         Room room = getRoom(roomId);
         if (room != null) {
+            if (!room.canAddUser()) {
+                return false;  // Room is full
+            }
             room.addUserName(userId, name);
-            redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
+            redisTemplate.opsForValue().set(
+                    ROOM_KEY_PREFIX + roomId,
+                    room,
+                    48,
+                    TimeUnit.HOURS
+            );
+            return true;
         }
+        return false;
     }
 
     public boolean isRevealed(String roomId) {
@@ -96,14 +109,36 @@ public class RoomService {
         );
     }
 
+//    public void removeUser(String roomId, String userId) {
+//        Room room = getRoom(roomId);
+//        if (room != null) {
+//            room.getUserVotes().remove(userId);
+//            room.getUserNames().remove(userId);
+//            saveRoom(room);
+//        }
+//    }
+
+    public Map<String, Object> getRoomState(String roomId) {
+        Map<String, Object> state = new HashMap<>();
+        state.put("votes", getVotes(roomId));
+        state.put("names", getUserNames(roomId));
+        state.put("revealed", isRevealed(roomId));
+        return state;
+    }
     public void removeUser(String roomId, String userId) {
         Room room = getRoom(roomId);
         if (room != null) {
             room.getUserVotes().remove(userId);
             room.getUserNames().remove(userId);
             saveRoom(room);
+
+            // Broadcast the updated user list
+            Map<String, Object> state = getRoomState(roomId);
+            messageTemplate.convertAndSend("/topic/room." + roomId + ".votes", state);
         }
     }
+
+
     // Add these methods to your RoomService.java
 
     /**

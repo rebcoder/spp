@@ -32,10 +32,17 @@ public class RoomController {
         }
     }
 
-
-
     @GetMapping("/votes")
     public Map<String, String> getVotes(@RequestParam String roomId) {
         return roomService.getVotes(roomId);
+    }
+
+    @PostMapping("/leave-room")
+    public ResponseEntity<?> leaveRoom(
+            @RequestParam String roomId,
+            @RequestParam String userId) {
+
+        roomService.removeUser(roomId, userId);
+        return ResponseEntity.ok().build();
     }
 }
