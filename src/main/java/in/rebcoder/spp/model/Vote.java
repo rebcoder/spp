@@ -12,16 +12,21 @@ import lombok.Setter;
 public class Vote {
     private String userId;
     private String value;
+    @Getter
+    private long lastActivity;
 
     @JsonCreator
     public Vote(@JsonProperty("userId") String userId,
-                @JsonProperty("value") String value) {
+                @JsonProperty("value") String value,
+                @JsonProperty("lastActivity") long lastActivity) {
         this.userId = userId;
         this.value = value;
+        this.lastActivity = lastActivity; // Initialize last activity time
     }
 
     @Override
     public String toString() {
         return this.value; // Return just the vote value for display
     }
+
 }

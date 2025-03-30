@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import in.rebcoder.spp.model.Room;
+import in.rebcoder.spp.model.Vote;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -22,6 +23,9 @@ public class RedisConfig {
 
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL);
+
+        // Explicitly register Vote class for deserialization
+        objectMapper.registerSubtypes(Vote.class);
 
         RedisTemplate<String, Room> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);

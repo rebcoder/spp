@@ -8,6 +8,16 @@ let joinedUsernames = new Set();
 function generateUserId() {
   return Math.random().toString(36).substr(2, 6);
 }
+// Generate or retrieve existing user ID
+function getOrCreateUserId() {
+    let userId = sessionStorage.getItem('scrumPokerUserId');
+    if (!userId) {
+        userId = generateUserId();
+        sessionStorage.setItem('scrumPokerUserId', userId);
+    }
+    return userId;
+}
+
 
 function getRoomIdFromUrl() {
   return new URLSearchParams(window.location.search).get('room');
@@ -25,9 +35,6 @@ function toggleRoomCreationOptions(show) {
 }
 
 function promptForUserName() {
-  const storedName = sessionStorage.getItem('scrumPokerUsername');
-  if (storedName===userName) return storedName;
-
   let name = '';
   while (true) {
     name = prompt('Please enter your name (required):').trim();
@@ -52,7 +59,6 @@ document.getElementById('create-room-btn').addEventListener('click', () => {
     .then(response => response.text())
     .then(roomId => {
       userId = generateUserId();
-      promptForUserName();
       window.location.href = `${window.location.origin}?room=${roomId}`;
     });
 });
@@ -117,21 +123,95 @@ document.getElementById('go-home-btn').addEventListener('click', () => {
   window.location.href = `${window.location.origin}/index.html`;
 });
 
-function connectWebSocket(roomId) {
-  const socket = new SockJS('/ws');
-  stompClient = Stomp.over(socket);
+//function connectWebSocket(roomId) {
+//    currentRoomId = roomId; // Store current room ID
+//
+//    const socket = new SockJS('/ws');
+//    stompClient = Stomp.over(socket);
+//
+//    stompClient.connect({}, function(frame) {
+//        // Send reconnect instead of join if we have existing ID
+//        const endpoint = sessionStorage.getItem('scrumPokerReconnected')
+//            ? `/app/reconnect.${roomId}`
+//            : `/app/join.${roomId}`;
+//
+//        stompClient.send(endpoint, {}, JSON.stringify({ userId, userName }));
+//        sessionStorage.setItem('scrumPokerReconnected', 'true');
+//
+//        stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
+//            const state = JSON.parse(message.body);
+//            updateUsersList(state.names);
+//            updateVotesList(state.votes, state.names, state.revealed);
+//        });
+//    }, function(error) {
+//        console.error('Connection error:', error);
+//        setTimeout(() => connectWebSocket(roomId), 5000);
+//    });
+//}
 
-  stompClient.connect({}, function(frame) {
-    stompClient.send(`/app/join.${roomId}`, {}, JSON.stringify({ userId, userName }));
-    stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
-      const state = JSON.parse(message.body);
-      updateUsersList(state.names);
-      updateVotesList(state.votes, state.names, state.revealed);
+function connectWebSocket(roomId) {
+    currentRoomId = roomId;
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+
+    stompClient.connect({}, function(frame) {
+        // Subscribe to room updates first
+        const roomSubscription = stompClient.subscribe(`/topic/room.${roomId}`, function(message) {
+            const data = JSON.parse(message.body);
+
+            // Handle room full error
+            if (data.error === "Room is full") {
+                alert("This room has reached its maximum capacity (15 users)");
+                window.location.href = `${window.location.origin}`;
+                return;
+            }
+
+            // Handle normal updates
+            if (data.votes !== undefined) {
+                updateUsersList(data.names);
+                updateVotesList(data.votes, data.names, data.revealed);
+            }
+        });
+
+        // Subscribe to vote updates
+        const voteSubscription = stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
+            const state = JSON.parse(message.body);
+            updateUsersList(state.names);
+            updateVotesList(state.votes, state.names, state.revealed);
+        });
+
+        // Send join/reconnect message
+        const endpoint = sessionStorage.getItem('scrumPokerReconnected')
+            ? `/app/reconnect.${roomId}`
+            : `/app/join.${roomId}`;
+
+        stompClient.send(endpoint, {}, JSON.stringify({
+            userId,
+            userName
+        }));
+
+        sessionStorage.setItem('scrumPokerReconnected', 'true');
+
+        // Store subscriptions for cleanup
+        socket.subscriptions = {
+            room: roomSubscription,
+            votes: voteSubscription
+        };
+
+    }, function(error) {
+        console.error('Connection error:', error);
+        showNotification("Connection lost - reconnecting...");
+        setTimeout(() => connectWebSocket(roomId), 5000);
     });
-  }, function(error) {
-    console.error('Connection error:', error);
-    setTimeout(() => connectWebSocket(roomId), 5000);
-  });
+
+    // Better disconnect handling
+    window.addEventListener('beforeunload', () => {
+        if (stompClient && stompClient.connected) {
+            stompClient.send(`/app/room.${roomId}.leave`, {},
+                JSON.stringify({ userId }));
+            stompClient.disconnect();
+        }
+    });
 }
 
 function sendVote(roomId, voteValue) {
@@ -147,6 +227,7 @@ function showNotification(message) {
 }
 
 function updateUsersList(names) {
+  document.getElementById('current-users').textContent = Object.keys(names).length;
   const usersList = document.getElementById('users-list');
   const userCount = document.getElementById('user-count');
   usersList.innerHTML = '';
@@ -185,7 +266,7 @@ function updateVotesList(votes, names, revealed) {
 window.onload = function() {
   if (isRoomUrl()) {
     const roomId = getRoomIdFromUrl();
-    userId = generateUserId();
+    userId = getOrCreateUserId();
     userName = promptForUserName();
     if (!userName) {
       window.location.href = `${window.location.origin}/index.html`;
@@ -204,6 +285,14 @@ window.onload = function() {
     toggleRoomCreationOptions(true);
   }
 };
+
+// Add beforeunload handler to clean up
+window.addEventListener('beforeunload', function() {
+    if (currentRoomId && userId) {
+        // Send leave message more reliably
+        navigator.sendBeacon(`/api/leave-room?roomId=${currentRoomId}&userId=${userId}`);
+    }
+});
 
 document.addEventListener('keydown', function(e) {
   if ((e.key === 'F5') || (e.key === 'r' && e.ctrlKey) || (e.key === 'R' && e.ctrlKey && e.shiftKey)) {

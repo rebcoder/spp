@@ -323,6 +323,11 @@ li {
   margin-top: 5px;
   display: none;
 }
+#room-capacity {
+    margin: 10px 0;
+    font-weight: bold;
+    color: var(--primary);
+}
 
 
 .toast-message {

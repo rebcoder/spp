@@ -18,6 +18,7 @@ public class Room {
     private ConcurrentMap<String, String> userNames;
     private boolean revealed;
     private long lastActivityTime;
+    private static final int MAX_USERS = 2;  // Add this constant
 
     @JsonCreator
     public Room(@JsonProperty("roomId") String roomId,
@@ -37,9 +38,13 @@ public class Room {
         this.userNames = new ConcurrentHashMap<>();
     }
 
+    public boolean canAddUser() {
+        return this.userNames.size() < MAX_USERS;
+    }
+
     // Update methods to handle Vote objects
     public void addOrUpdateVote(String userId, String voteValue) {
-        this.userVotes.put(userId, new Vote(userId, voteValue));
+        this.userVotes.put(userId, new Vote(userId, voteValue, System.currentTimeMillis()));
         updateLastActivityTime();
     }
     @JsonIgnore
@@ -53,6 +58,7 @@ public class Room {
         userNames.put(userId, name);
         updateLastActivityTime();
     }
+
 
     public void updateLastActivityTime() {
         this.lastActivityTime = System.currentTimeMillis();

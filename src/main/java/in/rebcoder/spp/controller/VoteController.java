@@ -29,7 +29,7 @@ public class VoteController {
         String userName = payload.get("userName");
         roomService.addOrUpdateVote(roomId, userId, vote);
         roomService.addUserName(roomId, userId, userName);
-        return getRoomState(roomId);
+        return roomService.getRoomState(roomId);
     }
 
     @MessageMapping("/room.{roomId}.reveal")
@@ -69,17 +69,16 @@ public class VoteController {
             @DestinationVariable String roomId) {
         String userId = payload.get("userId");
         String userName = payload.get("userName");
+        if (!roomService.addUserName(roomId, userId, userName)) {
+            return Map.of(
+                    "error", "Room is full (max 15 users)",
+                    "roomFull", true
+            );
+        }
         roomService.addUserName(roomId, userId, userName);
-        return getRoomState(roomId);
+        return roomService.getRoomState(roomId);
     }
 
-    private Map<String, Object> getRoomState(String roomId) {
-        Map<String, Object> state = new HashMap<>();
-        state.put("votes", roomService.getVotes(roomId));
-        state.put("names", roomService.getUserNames(roomId));
-        state.put("revealed", roomService.isRevealed(roomId));
-        return state;
-    }
 
     @MessageMapping("/room.{roomId}.leave")
     public void handleLeave(
@@ -88,5 +87,24 @@ public class VoteController {
 
         String userId = payload.get("userId");
         roomService.removeUser(roomId, userId);
+    }
+
+    @MessageMapping("/reconnect.{roomId}")
+    @SendTo("/topic/room.{roomId}.votes")
+    public Map<String, Object> handleReconnect(
+            @Payload Map<String, String> payload,
+            @DestinationVariable String roomId) {
+
+        String userId = payload.get("userId");
+        String userName = payload.get("userName");
+
+        // Just update last activity time
+        Room room = roomService.getRoom(roomId);
+        if (room != null) {
+            room.updateLastActivityTime();
+            roomService.saveRoom(room);
+        }
+
+        return roomService.getRoomState(roomId);
     }
 }
