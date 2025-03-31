@@ -39,7 +39,7 @@ public class RoomService {
 
     public void addOrUpdateVote(String roomId, String userId, String vote) {
         Room room = getRoom(roomId);
-        if (room != null) {
+        if (room != null && room.getUserNames().containsKey(userId)) {
             room.addOrUpdateVote(userId, vote);
             redisTemplate.opsForValue().set(ROOM_KEY_PREFIX + roomId, room, 48, TimeUnit.HOURS);
         }

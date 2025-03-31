@@ -18,7 +18,7 @@ public class Room {
     private ConcurrentMap<String, String> userNames;
     private boolean revealed;
     private long lastActivityTime;
-    private static final int MAX_USERS = 2;  // Add this constant
+    private static final int MAX_USERS = 15;  // Add this constant
 
     @JsonCreator
     public Room(@JsonProperty("roomId") String roomId,
