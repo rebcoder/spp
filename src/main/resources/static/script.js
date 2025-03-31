@@ -8,16 +8,15 @@ let joinedUsernames = new Set();
 function generateUserId() {
   return Math.random().toString(36).substr(2, 6);
 }
-// Generate or retrieve existing user ID
-function getOrCreateUserId() {
-    let userId = sessionStorage.getItem('scrumPokerUserId');
-    if (!userId) {
-        userId = generateUserId();
-        sessionStorage.setItem('scrumPokerUserId', userId);
-    }
-    return userId;
-}
 
+function getOrCreateUserId() {
+  let userId = sessionStorage.getItem('scrumPokerUserId');
+  if (!userId) {
+    userId = generateUserId();
+    sessionStorage.setItem('scrumPokerUserId', userId);
+  }
+  return userId;
+}
 
 function getRoomIdFromUrl() {
   return new URLSearchParams(window.location.search).get('room');
@@ -123,95 +122,113 @@ document.getElementById('go-home-btn').addEventListener('click', () => {
   window.location.href = `${window.location.origin}/index.html`;
 });
 
-//function connectWebSocket(roomId) {
-//    currentRoomId = roomId; // Store current room ID
-//
-//    const socket = new SockJS('/ws');
-//    stompClient = Stomp.over(socket);
-//
-//    stompClient.connect({}, function(frame) {
-//        // Send reconnect instead of join if we have existing ID
-//        const endpoint = sessionStorage.getItem('scrumPokerReconnected')
-//            ? `/app/reconnect.${roomId}`
-//            : `/app/join.${roomId}`;
-//
-//        stompClient.send(endpoint, {}, JSON.stringify({ userId, userName }));
-//        sessionStorage.setItem('scrumPokerReconnected', 'true');
-//
-//        stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
-//            const state = JSON.parse(message.body);
-//            updateUsersList(state.names);
-//            updateVotesList(state.votes, state.names, state.revealed);
-//        });
-//    }, function(error) {
-//        console.error('Connection error:', error);
-//        setTimeout(() => connectWebSocket(roomId), 5000);
-//    });
-//}
-
 function connectWebSocket(roomId) {
-    currentRoomId = roomId;
-    const socket = new SockJS('/ws');
-    stompClient = Stomp.over(socket);
+  currentRoomId = roomId;
+  const socket = new SockJS('/ws');
+  stompClient = Stomp.over(socket);
 
-    stompClient.connect({}, function(frame) {
-        // Subscribe to room updates first
-        const roomSubscription = stompClient.subscribe(`/topic/room.${roomId}`, function(message) {
-            const data = JSON.parse(message.body);
+  sessionStorage.removeItem('scrumPokerReconnected');
 
-            // Handle room full error
-            if (data.error === "Room is full") {
-                alert("This room has reached its maximum capacity (15 users)");
-                window.location.href = `${window.location.origin}`;
-                return;
-            }
+  stompClient.connect({}, function(frame) {
+    const roomSubscription = stompClient.subscribe(`/topic/room.${roomId}`, function(message) {
+      const data = JSON.parse(message.body);
 
-            // Handle normal updates
-            if (data.votes !== undefined) {
-                updateUsersList(data.names);
-                updateVotesList(data.votes, data.names, data.revealed);
-            }
-        });
-
-        // Subscribe to vote updates
-        const voteSubscription = stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
-            const state = JSON.parse(message.body);
-            updateUsersList(state.names);
-            updateVotesList(state.votes, state.names, state.revealed);
-        });
-
-        // Send join/reconnect message
-        const endpoint = sessionStorage.getItem('scrumPokerReconnected')
-            ? `/app/reconnect.${roomId}`
-            : `/app/join.${roomId}`;
-
-        stompClient.send(endpoint, {}, JSON.stringify({
-            userId,
-            userName
-        }));
-
-        sessionStorage.setItem('scrumPokerReconnected', 'true');
-
-        // Store subscriptions for cleanup
-        socket.subscriptions = {
-            room: roomSubscription,
-            votes: voteSubscription
-        };
-
-    }, function(error) {
-        console.error('Connection error:', error);
-        showNotification("Connection lost - reconnecting...");
-        setTimeout(() => connectWebSocket(roomId), 5000);
-    });
-
-    // Better disconnect handling
-    window.addEventListener('beforeunload', () => {
-        if (stompClient && stompClient.connected) {
-            stompClient.send(`/app/room.${roomId}.leave`, {},
-                JSON.stringify({ userId }));
-            stompClient.disconnect();
+      if (data.allowed !== undefined) {
+        if (!data.allowed) {
+          handleAccessDenied(data.error);
+          return;
         }
+
+        sessionStorage.setItem('scrumPokerUserId', userId);
+        sessionStorage.setItem('scrumPokerUsername', userName);
+        sessionStorage.setItem('scrumPokerRoomId', roomId);
+      }
+
+      if (data.state) {
+        updateUI(data.state);
+      }
     });
+
+    const voteSubscription = stompClient.subscribe(`/topic/room.${roomId}.votes`, function(message) {
+      const data = JSON.parse(message.body);
+
+      if (data.error) {
+        handleAccessDenied(data.error);
+        return;
+      }
+
+      updateUI(data);
+    });
+
+    const isReconnect = sessionStorage.getItem('scrumPokerReconnected') === 'true';
+    const endpoint = isReconnect ? `/app/reconnect.${roomId}` : `/app/join.${roomId}`;
+
+    stompClient.send(endpoint, {}, JSON.stringify({ userId, userName }));
+
+    if (!isReconnect) {
+      sessionStorage.setItem('scrumPokerReconnected', 'true');
+    }
+
+    socket.subscriptions = { room: roomSubscription, votes: voteSubscription };
+
+  }, function(error) {
+    console.error('Connection error:', error);
+    showNotification("Connection lost - reconnecting...");
+    setTimeout(() => connectWebSocket(roomId), 5000);
+  });
+
+  const disconnectHandler = () => {
+    if (stompClient && stompClient.connected) {
+      stompClient.send(`/app/room.${roomId}.leave`, {}, JSON.stringify({ userId }));
+      stompClient.disconnect();
+    }
+  };
+
+  window.addEventListener('beforeunload', disconnectHandler);
+  window.addEventListener('pagehide', disconnectHandler);
+}
+
+function handleAccessDenied(errorMessage) {
+  alert(errorMessage);
+
+  document.querySelectorAll('.vote-btn').forEach(btn => {
+    btn.disabled = true;
+    btn.classList.add('disabled');
+  });
+
+  document.getElementById('room-info').innerHTML = `
+    <div class="access-denied">
+      <h3>Access Denied</h3>
+      <p>${errorMessage}</p>
+    </div>
+  `;
+
+  if (errorMessage.includes('full')) {
+    setTimeout(() => {
+      window.location.href = window.location.origin;
+    }, 3000);
+  }
+}
+
+function updateUI(state) {
+  const userCountElement = document.getElementById('user-count');
+  if (userCountElement) {
+    userCountElement.textContent = `${Object.keys(state.names).length}/15`;
+
+    if (Object.keys(state.names).length >= 13) {
+      userCountElement.classList.add('room-full-warning');
+    } else {
+      userCountElement.classList.remove('room-full-warning');
+    }
+  }
+
+  if (!state.names[userId]) {
+    handleAccessDenied("You were removed from this room");
+    return;
+  }
+
+  updateUsersList(state.names);
+  updateVotesList(state.votes, state.names, state.revealed);
 }
 
 function sendVote(roomId, voteValue) {
@@ -286,12 +303,10 @@ window.onload = function() {
   }
 };
 
-// Add beforeunload handler to clean up
 window.addEventListener('beforeunload', function() {
-    if (currentRoomId && userId) {
-        // Send leave message more reliably
-        navigator.sendBeacon(`/api/leave-room?roomId=${currentRoomId}&userId=${userId}`);
-    }
+  if (currentRoomId && userId) {
+    navigator.sendBeacon(`/api/leave-room?roomId=${currentRoomId}&userId=${userId}`);
+  }
 });
 
 document.addEventListener('keydown', function(e) {
@@ -307,15 +322,4 @@ function showToast(message) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
-}
-
-
-// Update your leaveRoom function
-function leaveRoom() {
-    if (stompClient) {
-        stompClient.send(`/app/room.${currentRoomId}.leave`, {},
-            JSON.stringify({ userId: userId }));
-        stompClient.disconnect();
-    }
-    window.location.href = '/';
 }

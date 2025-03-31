@@ -24,11 +24,45 @@ public class VoteController {
     public Map<String, Object> vote(
             @Payload Map<String, String> payload,
             @DestinationVariable String roomId) {
+
         String userId = payload.get("userId");
         String vote = payload.get("vote");
         String userName = payload.get("userName");
+
+        // Get current room state
+        Room room = roomService.getRoom(roomId);
+        if (room == null) {
+            return Map.of(
+                    "error", "Room does not exist",
+                    "allowed", false
+            );
+        }
+
+        // Check room capacity (15 users max)
+        if (room.getUserNames().size() >= 15 && !room.getUserNames().containsKey(userId)) {
+            return Map.of(
+                    "error", "Room is full (max 15 users)",
+                    "roomFull", true,
+                    "allowed", false
+            );
+        }
+
+        // Validate user exists in room
+        if (!room.getUserNames().containsKey(userId)) {
+            // Only allow adding if under capacity
+            if (room.getUserNames().size() < 15) {
+                roomService.addUserName(roomId, userId, userName);
+            } else {
+                return Map.of(
+                        "error", "You cannot join this full room",
+                        "allowed", false
+                );
+            }
+        }
+
+        // Only process vote if all checks pass
         roomService.addOrUpdateVote(roomId, userId, vote);
-        roomService.addUserName(roomId, userId, userName);
+
         return roomService.getRoomState(roomId);
     }
 
@@ -61,22 +95,37 @@ public class VoteController {
         );
     }
 
-
     @MessageMapping("/join.{roomId}")
-    @SendTo("/topic/room.{roomId}.votes")
+    @SendTo("/topic/room.{roomId}")
     public Map<String, Object> joinRoom(
             @Payload Map<String, String> payload,
             @DestinationVariable String roomId) {
+
         String userId = payload.get("userId");
         String userName = payload.get("userName");
-        if (!roomService.addUserName(roomId, userId, userName)) {
+
+        Room room = roomService.getRoom(roomId);
+        if (room == null) {
+            return Map.of("error", "Room not found");
+        }
+
+        if (room.getUserNames().size() >= 15) {
             return Map.of(
                     "error", "Room is full (max 15 users)",
-                    "roomFull", true
+                    "roomFull", true,
+                    "allowed", false
             );
         }
-        roomService.addUserName(roomId, userId, userName);
-        return roomService.getRoomState(roomId);
+
+        // Only add user if not already present
+        if (!room.getUserNames().containsKey(userId)) {
+            roomService.addUserName(roomId, userId, userName);
+        }
+
+        return Map.of(
+                "allowed", true,
+                "state", roomService.getRoomState(roomId)
+        );
     }
 
 
