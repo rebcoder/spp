@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import in.rebcoder.spp.model.Room;
 import in.rebcoder.spp.model.Vote;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -15,22 +17,33 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 @Configuration
 public class RedisConfig {
 
-    @Bean
-    public RedisTemplate<String, Room> redisTemplate(RedisConnectionFactory connectionFactory) {
-        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
-                .allowIfBaseType(Object.class)
-                .build();
+    @Value("${spring.redis.host:localhost}")
+    private String redisHost;
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL);
+    @Value("${spring.redis.port:6379}")
+    private int redisPort;
 
-        // Explicitly register Vote class for deserialization
-        objectMapper.registerSubtypes(Vote.class);
+     @Bean
+        public RedisTemplate<String, Room> redisTemplate(RedisConnectionFactory connectionFactory) {
+            // Secure polymorphic typing - only allow our model classes
+            PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+                    .allowIfBaseType(Object.class)
+                    .allowIfSubType("in.rebcoder.spp.model") // Only our model package
+                    .build();
 
-        RedisTemplate<String, Room> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(objectMapper));
-        return template;
-    }
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL);
+            objectMapper.registerSubtypes(Vote.class); // Explicitly register allowed classes
+
+            RedisTemplate<String, Room> template = new RedisTemplate<>();
+            template.setConnectionFactory(connectionFactory);
+            template.setKeySerializer(new StringRedisSerializer());
+            template.setValueSerializer(new GenericJackson2JsonRedisSerializer(objectMapper));
+
+            // Minimal security hardening
+            template.setEnableDefaultSerializer(false); // Disable default serialization
+            template.afterPropertiesSet(); // Initialize properly
+
+            return template;
+        }
 }
