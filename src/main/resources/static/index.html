@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scrum Poker Planner</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>Scrum Poker Planner</h1>
+  <hr />
+
+  <!-- Room Creation Section -->
+  <div id="room-section">
+    <button id="create-room-btn">Create Room</button>
+    <input id="room-code-input" placeholder="Enter Room Code" />
+    <button id="join-room-btn">Join Room</button>
+    <button id="go-home-btn" style="display:none;">Go to Home</button>
+  </div>
+
+  <!-- Room Info -->
+  <div id="room-info" style="display:none;">
+    <h2>Room Code: <span id="room-code"></span></h2>
+    <h3>Your Name: <span id="user-name"></span></h3>
+    <button id="copy-link-btn">Copy Invite Link</button>
+  </div>
+
+  <!-- Voting Section -->
+  <div id="voting-section" style="display:none;">
+    <h2>Select your vote:</h2>
+    <div class="cards">
+      <button class="vote-btn" data-value="1">1</button>
+      <button class="vote-btn" data-value="2">2</button>
+      <button class="vote-btn" data-value="3">3</button>
+      <button class="vote-btn" data-value="5">5</button>
+      <button class="vote-btn" data-value="8">8</button>
+      <button class="vote-btn" data-value="13">13</button>
+      <button class="vote-btn" data-value="20">20</button>
+      <button class="vote-btn" data-value="☕">☕</button>
+    </div>
+    <div class="action-buttons">
+      <button id="reveal-votes-btn">Reveal Votes</button>
+      <button id="clear-votes-btn">Clear Votes</button>
+    </div>
+  </div>
+  <!-- Add this near your room code display -->
+  <div id="room-capacity">
+    Users: <span id="current-users">0</span>/15
+  </div>
+
+  <!-- Users Section -->
+  <div id="users-section" style="display:none;">
+    <h2>Participants (<span id="user-count">0</span>)</h2>
+    <div class="users-container">
+      <ul id="users-list"></ul>
+    </div>
+  </div>
+
+  <!-- Votes Section -->
+  <div id="votes-section" style="display:none;">
+    <h2>Votes</h2>
+    <ul id="votes-list"></ul>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
