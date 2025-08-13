@@ -113,18 +113,6 @@ Contributions are welcome! Please follow these steps:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Screenshots 📷
-
-*(Add screenshots of the application in action here)*
-
-## Roadmap 🗺️
-
-- [ ] Add user authentication
-- [ ] Implement voting history
-- [ ] Add admin controls
-- [ ] Support for multiple voting rounds
-- [ ] Mobile app version
-
 ---
 
 **Happy Planning!** 🎉
